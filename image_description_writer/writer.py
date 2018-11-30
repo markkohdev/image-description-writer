@@ -1,3 +1,4 @@
+#! /usr/bin/python
 import os
 import glob
 import re
@@ -117,7 +118,14 @@ class ImageDescriptionWriter:
         """
         return cls.set_field(file_path, DESC_KEY, value)
 
-    def handle_file(self, filepath: str) -> int:
+    @classmethod
+    def remove_description(cls, file_path: str):
+        """
+        Given a file path, remove the description metadata on the file
+        """
+        return cls.set_description(file_path, '')
+
+    def write_directory_structure(self, filepath: str) -> int:
         """
         Given a file path, create a description, parse the existing description
         and replace if necessary.
@@ -162,23 +170,44 @@ class ImageDescriptionWriter:
             logger.error(f"Unexpected error occured while processing image {filepath}.", e)
             return -1
 
-    def write_metadata(self):
-        updated_count = 0
-        skipped_count = 0
-        errored_count = 0
+    def clean_directory_metadata(self, filepath: str) -> int:
+        ext = os.path.splitext(filepath)[1].lower()
+        try:
+            if ext == '.jpg':
+                desc = self.get_description(filepath)
+                if desc and self.existing_prefix in desc:
+                    self.remove_description(filepath)
+                    return 0
+                else:
+                    return 1
+            else:
+                return 1
+        except Exception as e:
+            logger.error(f"Unexpected error occured while processing image {filepath}.", e)
+            return -1
 
+
+    def execute_on_files(self, func):
         files = glob.glob('{}/**/*.*'.format(self.directory), recursive=True)
         files = [f for f in files if os.path.splitext(f)[1].lower() in ALLOWED_EXT]
 
         logger.info("Found {} files in {}".format(len(files), self.directory))
 
         with Pool(5) as p:
-            results = p.map(self.handle_file, files)
+            results = p.map(func, files)
 
-        # for filepath in files:
-        #     self.handle_file(filepath)
+        # Count the values for logging
+        updated_count = results.count(0)
+        skipped_count = results.count(1)
+        errored_count = results.count(-1)
 
-        logger.info(f"{update_msg} {updated_count} files, Skipped {skipped_count} files, Failed {errored_count}")
+        logger.info(f'{update_msg} {updated_count} files, Skipped {skipped_count} files, Failed {errored_count}')
+
+    def write_metadata(self):
+        self.execute_on_files(self.write_directory_structure)
+
+    def clean_metadata(self):
+        self.execute_on_files(self.clean_directory_metadata)
 
 def __main__(args):
     if args.v:
@@ -187,13 +216,18 @@ def __main__(args):
         logger.setLevel(level=logging.ERROR)
 
     if args.dry_run:
-        logger.info("Running in DRY RUN mode.  No files will be modified.")
+        logger.info('Running in DRY RUN mode.  No files will be modified.')
 
-    imgWriter = ImageDescriptionWriter(args.DIR, args.prefix, args.existing_prefix, args.f, args.dry_run)
-    imgWriter.write_metadata()
+    imgWriter = ImageDescriptionWriter(args.dir, args.prefix, args.existing_prefix, args.f, args.dry_run)
+
+    if args.action == 'write':
+        imgWriter.write_metadata()
+    elif args.action == 'clean':
+        imgWriter.clean_metadata()
 
 parser = argparse.ArgumentParser(description='Write EXIF metadata to files based on their directory structure')
-parser.add_argument('DIR', help='The root directory which to recurse through.')
+parser.add_argument('action', help='Write or clean the metadata from the files.', choices=['write', 'clean'], default='write')
+parser.add_argument('dir', metavar='DIR', help='The root directory which to recurse through.')
 parser.add_argument('-f', action='store_true', help='Force rewriting of existing descriptions.')
 parser.add_argument('--prefix', help='The string with which to prepend the descriptions', default='[EXIF writer]')
 parser.add_argument('--existing-prefix', help='An alternative prefix which to search for as safe to replace')
