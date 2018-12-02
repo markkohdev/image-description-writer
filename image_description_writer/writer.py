@@ -32,14 +32,6 @@ ALLOWED_EXT = [
 DESC_KEY = 'Description'
 NUM_THREADS = 8
 
-# TODO: Move these to instance vars
-prefix = None
-existing_prefix = None
-force = False
-dry_run = False
-root_dir_length = 0
-update_msg = "Updated"
-
 class ImageDescriptionWriter:
 
     def __init__(self,
@@ -152,7 +144,7 @@ class ImageDescriptionWriter:
                         if not self.dry_run:
                             # Update the exif dict and write it to the file
                             self.set_description(filepath, new_desc)
-                        logger.debug(f"{update_msg} {filepath}: '{new_desc}'")
+                        logger.debug(f"{self.update_msg} {filepath}: '{new_desc}'")
                         return 0
                     else:
                         logger.debug(f"NOT Updated (already written) {filepath}: '{desc}'")
@@ -176,9 +168,12 @@ class ImageDescriptionWriter:
             if ext == '.jpg':
                 desc = self.get_description(filepath)
                 if desc and self.existing_prefix in desc:
-                    self.remove_description(filepath)
+                    if not self.dry_run:
+                        self.remove_description(filepath)
+                    logger.debug(f"{self.update_msg} {filepath} -- Removed description")
                     return 0
                 else:
+                    logger.debug(f"NOT Updated {filepath}: '{desc}'")
                     return 1
             else:
                 return 1
@@ -201,7 +196,7 @@ class ImageDescriptionWriter:
         skipped_count = results.count(1)
         errored_count = results.count(-1)
 
-        logger.info(f'{update_msg} {updated_count} files, Skipped {skipped_count} files, Failed {errored_count}')
+        logger.info(f'{self.update_msg} {updated_count} files, Skipped {skipped_count} files, Failed {errored_count}')
 
     def write_metadata(self):
         self.execute_on_files(self.write_directory_structure)
